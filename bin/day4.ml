@@ -45,7 +45,7 @@ let find_x_mas row col =
   let directions = [ 1, 1; 1, -1 ] in
   let check_point_for_equality x y c =
     match get_grid_point x y with
-    | Some ch -> if Char.equal c ch then true else false
+    | Some ch -> Char.equal c ch
     | None -> false
   in
   let check_diagonal (x, y) (dx, dy) =
