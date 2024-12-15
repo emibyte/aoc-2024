@@ -33,14 +33,14 @@ and 'a node =
   }
 
 (* IDEA: ITS A TREEEEEEEEEEE (i have literally never used a tree before im like so happy rn) *)
-let build_computation_tree operands =
+let build_computation_tree operands is_part_one =
   let rec aux prev op = function
     | value :: xs ->
       Node
         { value = op prev value
         ; left = aux (op prev value) Int.( + ) xs
         ; right = aux (op prev value) Int.( * ) xs
-        ; middle = aux (op prev value) ( ||| ) xs
+        ; middle = (if is_part_one then Leaf else aux (op prev value) ( ||| ) xs)
         }
     | [] -> Leaf
   in
@@ -62,8 +62,8 @@ let rec is_value_in_comp_tree expected_value = function
   | Leaf -> false
 ;;
 
-let can_be_solved (result, operands) =
-  build_computation_tree operands |> is_value_in_comp_tree result
+let can_be_solved (result, operands) is_part_one =
+  build_computation_tree operands is_part_one |> is_value_in_comp_tree result
 ;;
 
 let part_1 =
@@ -71,7 +71,17 @@ let part_1 =
     (module Int)
     input
     ~f:(fun (expected, operands) ->
-      if can_be_solved (expected, operands) then expected else 0)
+      if can_be_solved (expected, operands) true then expected else 0)
 ;;
 
 let () = part_1 |> Int.to_string |> print_endline
+
+let part_2 =
+  List.sum
+    (module Int)
+    input
+    ~f:(fun (expected, operands) ->
+      if can_be_solved (expected, operands) false then expected else 0)
+;;
+
+let () = part_2 |> Int.to_string |> print_endline
