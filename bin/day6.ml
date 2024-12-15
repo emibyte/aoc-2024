@@ -1,6 +1,12 @@
 open Core
 open Stdio
 
+type direction =
+  | Up
+  | Right
+  | Down
+  | Left
+
 module Coordinate = struct
   module T = struct
     type t = int * int
@@ -16,22 +22,23 @@ module Coordinate = struct
 end
 
 module CoordinateSet = Set.Make (Coordinate)
+module CoordinateMap = Map.Make (Coordinate)
+
+type collision_state =
+  { direction : direction
+  ; position : Coordinate.t
+  ; obs_position : Coordinate.t
+  }
 
 let grid =
   In_channel.read_lines "inputs/day6.txt" |> List.to_array |> Array.map ~f:String.to_array
 ;;
 
-let get_grid_point row col =
+let get_grid_point row col grid =
   if row >= Array.length grid || col >= Array.length grid.(0) || row < 0 || col < 0
   then None
   else Some grid.(row).(col)
 ;;
-
-type direction =
-  | Up
-  | Right
-  | Down
-  | Left
 
 let get_direction = function
   | '^' -> Up
@@ -45,6 +52,9 @@ type guard =
   { position : Coordinate.t
   ; direction : direction
   ; traversed : CoordinateSet.t
+  ; hit_obstacles :
+      (Coordinate.t, collision_state list, Coordinate.comparator_witness) Map.t
+  ; is_looping : bool
   }
 
 type cell =
@@ -92,8 +102,8 @@ let walk_in_dir guard = function
     }
 ;;
 
-let get_cell_type (row, col) =
-  match get_grid_point row col with
+let get_cell_type (row, col) grid =
+  match get_grid_point row col grid with
   | Some c ->
     (match c with
      | '#' -> Obstacle
@@ -102,27 +112,51 @@ let get_cell_type (row, col) =
          { position = row, col
          ; direction = get_direction c
          ; traversed = Set.add CoordinateSet.empty (row, col)
+         ; hit_obstacles = Map.empty (module Coordinate)
+         ; is_looping = false
          }
      | _ -> Empty)
   | None -> Outside
 ;;
 
-let take_a_step guard =
+let take_a_step guard grid =
   let step_row, step_col = get_step_destination guard guard.direction in
-  match get_cell_type (step_row, step_col) with
+  match get_cell_type (step_row, step_col) grid with
   | Empty -> walk_in_dir guard guard.direction
   | Guard _ -> walk_in_dir guard guard.direction
-  | Obstacle -> turn_at_obstacle guard
+  | Obstacle ->
+    let obs_position = step_row, step_col in
+    let has_collision_happened_before =
+      match Map.find guard.hit_obstacles (step_row, step_col) with
+      | Some xs ->
+        List.exists xs ~f:(fun cs ->
+          Coordinate.( = ) cs.obs_position obs_position
+          && Coordinate.( = ) cs.position guard.position
+          && Poly.( = ) cs.direction guard.direction)
+      | None -> false
+    in
+    if has_collision_happened_before
+    then { guard with is_looping = true }
+    else
+      turn_at_obstacle
+        { guard with
+          hit_obstacles =
+            Map.add_multi
+              guard.hit_obstacles
+              ~key:(step_row, step_col)
+              ~data:
+                { position = guard.position; direction = guard.direction; obs_position }
+        }
   | Outside -> guard
 ;;
 
-let rec walk_maze guard =
-  let guard_after_step = take_a_step guard in
+let rec walk_maze guard grid =
+  let guard_after_step = take_a_step guard grid in
   if
     Poly.( = ) guard_after_step.direction guard.direction
     && Poly.( = ) guard_after_step.position guard.position
   then guard
-  else walk_maze guard_after_step
+  else walk_maze guard_after_step grid
 ;;
 
 let init_guard grid =
@@ -140,12 +174,50 @@ let init_guard grid =
   { position = row, col
   ; direction = get_direction dir
   ; traversed = Set.add CoordinateSet.empty position
+  ; hit_obstacles = Map.empty (module Coordinate)
+  ; is_looping = false
   }
 ;;
 
 let part_1 =
   let final = init_guard grid |> walk_maze in
-  Set.length final.traversed
+  Set.length (final grid).traversed
 ;;
 
 let () = part_1 |> Int.to_string |> print_endline
+
+let traversed_without_start =
+  let guard = init_guard grid in
+  let start_point = guard.position in
+  let traversed_with_start_point = walk_maze guard grid |> fun g -> g.traversed in
+  Set.remove traversed_with_start_point start_point
+;;
+
+let get_grids_with_new_obstacle grid traversed =
+  let copy_grid_and_place_obstacle row col =
+    let copy = Array.copy_matrix grid in
+    copy.(row).(col) <- '#';
+    copy
+  in
+  Set.fold traversed ~init:[] ~f:(fun acc (row, col) ->
+    copy_grid_and_place_obstacle row col :: acc)
+;;
+
+let rec is_looping grid guard =
+  let guard_after_step = take_a_step guard grid in
+  let did_not_move =
+    Poly.( = ) guard_after_step.direction guard.direction
+    && Poly.( = ) guard_after_step.position guard.position
+  in
+  if did_not_move then guard_after_step.is_looping else is_looping grid guard_after_step
+;;
+
+let part_2 =
+  let base_grid = grid in
+  traversed_without_start
+  |> get_grids_with_new_obstacle base_grid
+  |> List.map ~f:(fun grid -> is_looping grid (init_guard base_grid))
+  |> List.count ~f:(fun b -> b)
+;;
+
+let () = part_2 |> Int.to_string |> print_endline
