@@ -1,4 +1,3 @@
 # aoc-2024
-hihi, im dumb
+just me trying to learn the camel language
 
-- [ ] add inputs to gitignore im dumb lol
